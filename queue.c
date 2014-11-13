@@ -24,6 +24,7 @@ struct Q {
 } *jobQ, *waitQ, *arrivalQ, *doneQ;
 
 int quantum = 0;
+int contextCost = 5;
 
 void create(){
 	jobQ = (struct Q *)malloc(sizeof(struct Q));
@@ -85,23 +86,21 @@ int popBurst(struct BurstQ *q){
 	}
 }
 
-void insertQ(int pid, struct Q *q){
-	struct PCB *temp = (struct PCB *)malloc(sizeof(struct PCB));
-	temp->pid = pid;
+void insertQ(struct PCB *pcb, struct Q *q){
 	struct PCB *pointer = (struct PCB *)malloc(sizeof(struct PCB));
 	pointer = q->head;
-	if (pid < q->head->pid){
-		temp->next = q->head;
-		q->head = temp;
-	} else if (pid > q->tail->pid){
-		q->tail->next = temp;
-		temp->next = NULL;
-		q->tail = temp;
+	if (pcb->awakeTime < q->head->awakeTime){
+		pcb->next = q->head;
+		q->head = pcb;
+	} else if (pcb->awakeTime > q->tail->awakeTime){
+		q->tail->next = pcb;
+		pcb->next = NULL;
+		q->tail = pcb;
 	} else {
 		while (pointer->next != NULL){
-			if (pid < pointer->next->pid){
-				temp->next = pointer->next;
-				pointer->next = temp;
+			if (pcb->awakeTime < pointer->next->awakeTime){
+				pcb->next = pointer->next;
+				pointer->next = pcb;
 				break;
 			} else {
 				pointer = pointer->next;
@@ -201,13 +200,34 @@ void cpu(){
 		}
 		//if no context switch, handle jobs
 		else {
-			if(onCPU == NULL && jobQ->n > 0) {
-			onCPU = popQ(jobQ);
-			printf("Process %d began running at %d", onCPU->pid, cycle);
-			} else if (){
-
+			if(onCPU == NULL){
+				if (jobQ->n > 0) {
+					contextSwitch = contextSwitch + contextCost;
+					onCPU = popQ(jobQ);
+					printf("Process %d began running at %d", onCPU->pid, cycle);
+				}
+			}
+			if (onCPU->cpuBurst->head->length > 0){
+				//still CPU burst, continue
+				onCPU->cpuBurst->head->length--;
+			} else if (onCPU->cpuBurst->head->length == 0){
+				//Burst done, remove from CPU, pop burst
+				popBurst(onCPU->cpuBurst); //remove 0'd CPU burst
+				//check if done
+				if (onCPU->cpuBurst->n == 0){
+					printf("Process %d finished running at %d", onCPU->pid, cycle);
+					onCPU = NULL;
+				} else {
+					onCPU->awakeTime = cycle + popBurst(onCPU->waitBurst); //process will wake up at cycle + waitBurst
+					//move from CPU to waitQ
+					pushPCB(onCPU, waitQ);
+					onCPU = NULL;
+					//this forces a context switch
+					contextSwitch = contextSwitch + contextCost;
+				}
 			}
 		}
+
 		//preemption
 		if(quantum > 0 ){
 			quantumCounter++;
